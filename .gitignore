@@ -1,0 +1,13 @@
+# Executable #
+ii
+ii.exe
+
+# built files #
+*.o
+*.1
+
+# configured source files #
+ii.cxx
+
+# test configuration #
+ii.conf

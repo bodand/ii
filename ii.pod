@@ -1,0 +1,120 @@
+=pod
+
+=encoding utf-8
+
+=head1 NAME
+
+ ii - is-inside.me uploader
+
+=head1 SYNOPSYS
+
+ ii [options] files...
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h>
+
+Prints a short help about usage and exit with a positive return value
+
+=item B<-c> I<file>
+
+Specifies which file to read for the configuration of is-inside.me accounts.
+
+=item B<-u> I<user>
+
+Specifies which user to upload to, if multiple are configured in the config
+file.
+
+=back
+
+=head1 DESCRIPTION
+
+Takes the files from the command line, and uploads them to the specified
+user's is-inside.me account. 
+
+=head2 Configuration
+
+If the L<B<-c>|/-c file> option is set, the file there will be used for reading the configuration.
+Otherwise, if the C<HOME> enviroment variable is present, the file used is F<$HOME/.ii.conf>,
+if not F</etc/.ii.conf> is used.
+The program fails and exits with a negative return value if it cannot open the specified file.
+
+=head2 Config format
+
+The configuration file should contain all is-inside.me users one wishes to upload files to.
+
+Each line in the file configures a different user, by providing the user's name, and
+then the key string, separated by a colon (C<:>). As a special case, when the 
+user name is omitted (thus the line starts with a colon), the current user's name
+is used (as reported by L<whoami(1)>).
+
+All lines whose first character is an octothorpe (C<#>) are ignored.
+
+=head2 User selection
+
+If the L<B<-u>|/-u user> option is set, the provided username is searched for. If it doesn't 
+extist, the program returns with a negative exit value.
+
+If the command line did not provide any users, the one used is the first one to appear
+in the file. This includes the implicit whoami user.
+
+=head1 FILES
+
+ $HOME/.ii.conf
+ /etc/.ii.conf
+
+=head1 EXIT VALUES
+
+=over 2
+
+=item <0
+
+An error occurred. More information is printed.
+
+=item Z<>0
+
+No errors occured; program run correctly.
+
+=item >0
+
+No error occured; program, however, did not fulfill its main purpose of uploading a file.
+
+=back
+
+=head1 AUTHOR
+
+ András B. <bodand@pm.me>
+
+=head1 LICENSE AND COPYRIGHT
+
+ Copyright (c) 2021, András B. (bodand)
+ All rights reserved.
+
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ 
+ 1. Redistributions of source code must retain the above copyright notice, this
+    list of conditions and the following disclaimer.
+ 
+ 2. Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the following disclaimer i n the documentation
+    and/or other materials provided with the distribution.
+ 
+ 3. Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission. 
+ 
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+=cut

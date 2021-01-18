@@ -1,0 +1,279 @@
+/* -*- C++ -*- */
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <vector>
+#include <algorithm>
+
+#define II_STR(x) II_STR_I (x)
+#define II_STR_I(x) #x
+
+#define II_VERSION @VERSION @
+#define II_VERSION_STRING II_STR (II_VERSION)
+
+#define II_USER_AGENT "ii/" II_VERSION_STRING
+
+using namespace std::literals;
+
+// utilities //
+[[noreturn]] void
+help ()
+{
+  std::cout << "usage:\n\tii [options] files...\n"
+            << "options:\n"
+            << "\t-h\t\tPrint this help and exit\n"
+            << "\t-c <file>\tRead <file> for the configuration\n"
+            << "\t-u <user>\tUse <user>'s account to upload to\n\n"
+            << "Options must be passed by themselves, POSIX-style packing is not supported.";
+  std::exit (1);
+}
+
+std::string
+getenv_or (std::string_view name, std::string_view fallback)
+{
+  auto v = std::getenv (name.data ());
+  if (!v)
+    return { fallback.data (), fallback.size () };
+  return { v };
+}
+
+std::string
+whoami ()
+{
+  std::string ret (128, '\0');
+
+  struct pcloser
+  {
+    void
+    operator() (FILE *file) const noexcept
+    {
+      pclose (file);
+    }
+  };
+
+  auto f = std::unique_ptr<FILE, pcloser> (popen ("whoami", "r"));
+  if (!f)
+    throw std::runtime_error ("can't figure out who am I");
+
+  if (!std::fscanf (f.get (), "%256s", ret.data ()))
+    throw std::runtime_error ("can't read whoami output");
+
+  return ret;
+}
+
+// user config file //
+struct user_cfg
+{
+  std::string name;
+  std::string pass;
+};
+
+std::istream &
+operator>> (std::istream &is, user_cfg &cfg)
+{
+  std::string burn;
+  while (is.peek () == '#')
+    std::getline (is, burn);
+
+  std::getline (is, cfg.name, ':');
+  if (cfg.name.empty ())
+    cfg.name = whoami ();
+
+  std::getline (is, cfg.pass);
+  return is;
+}
+
+std::vector<user_cfg>
+read_config (std::string_view filename)
+{
+  std::ifstream file (filename.data ());
+  if (!file.is_open ())
+    throw std::invalid_argument ("config file does not exist or is unreadable");
+
+  std::vector<user_cfg> ret;
+  user_cfg cfg;
+  while (file >> cfg)
+    {
+      ret.push_back (cfg);
+    }
+
+  return ret;
+}
+
+// curl things //
+#include <curl/curl.h>
+
+struct curl_easy_freer
+{
+  void
+  operator() (CURL *curl) const noexcept
+  {
+    curl_easy_cleanup (curl);
+  }
+};
+
+struct curl_mime_freer
+{
+  void
+  operator() (curl_mime *mime) const noexcept
+  {
+    curl_mime_free (mime);
+  }
+};
+
+struct curl_slist_freer
+{
+  void
+  operator() (curl_slist *slist) const noexcept
+  {
+    curl_slist_free_all (slist);
+  }
+};
+
+std::unique_ptr<CURL, curl_easy_freer>
+mk_curl ()
+{
+  return std::unique_ptr<CURL, curl_easy_freer> (curl_easy_init ());
+}
+
+std::size_t
+curl_callback (char *str, std::size_t, std::size_t cnt, void *data)
+{
+  decltype(auto) ss = *reinterpret_cast<std::ostringstream *> (data);
+  ss << std::string_view (str, cnt);
+  return cnt;
+}
+
+std::pair<int, std::string>
+upload_file (CURL *curl, std::string_view url, std::string_view key_hdr, std::string_view file)
+{
+  static std::string known_hosts = getenv_or ("HOME", "/home/" + whoami ());
+
+  auto headers = std::unique_ptr<curl_slist, curl_slist_freer> (curl_slist_append (nullptr, key_hdr.data ()));
+
+  curl_easy_setopt (curl, CURLOPT_BUFFERSIZE, 1048576L); // 2^20
+  curl_easy_setopt (curl, CURLOPT_URL, url.data ());
+
+  auto mime = std::unique_ptr<curl_mime, curl_mime_freer> (curl_mime_init (curl));
+  auto part = curl_mime_addpart (mime.get ());
+  curl_mime_filedata (part, file.data ());
+  curl_mime_name (part, "file");
+
+  curl_easy_setopt (curl, CURLOPT_MIMEPOST, mime.get ());
+  curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers.get ());
+  curl_easy_setopt (curl, CURLOPT_USERAGENT, II_USER_AGENT " ");
+  curl_easy_setopt (curl, CURLOPT_MAXREDIRS, 50L);
+  curl_easy_setopt (curl, CURLOPT_HTTP_VERSION, static_cast<long> (CURL_HTTP_VERSION_2TLS));
+  curl_easy_setopt (curl, CURLOPT_SSH_KNOWNHOSTS, known_hosts.c_str ());
+  curl_easy_setopt (curl, CURLOPT_FTP_SKIP_PASV_IP, 1L);
+  curl_easy_setopt (curl, CURLOPT_TCP_KEEPALIVE, 1L);
+
+  std::ostringstream ss;
+  curl_easy_setopt (curl, CURLOPT_WRITEDATA, reinterpret_cast <void *> (&ss));
+  curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, curl_callback);
+
+  auto ret = curl_easy_perform (curl);
+
+  return { static_cast<int> (ret), ss.str () };
+}
+
+// main //
+int
+main (int argc, char **argv)
+{
+  std::string cfg_file;
+  std::string user;
+  std::vector<std::string_view> files;
+
+  if (argc == 1)
+    help ();
+
+  for (int i = 1; i < argc; ++i)
+    {
+      if (argv[i][0] == '-')
+        {
+          if (argv[i][2] != '\0')
+            {
+              std::cerr << "ii: options must stand by themselves followed by the value: " << argv[i] << '\n';
+              std::exit (-1);
+            }
+          switch (argv[i][1])
+            {
+            case 'h':
+              help ();
+            case 'c':
+              if (i + 1 == argc)
+                {
+                  std::cerr << "ii: option requires operands: -c <file>\n";
+                  std::exit (-1);
+                }
+              cfg_file = argv[++i];
+              break;
+            case 'u':
+              if (i + 1 == argc)
+                {
+                  std::cerr << "ii: option requires operands: -u <user>\n";
+                  std::exit (-1);
+                }
+              user = argv[++i];
+              break;
+            default:
+              std::cerr << "ii: unrecognized option: " << argv[i] << '\n';
+              std::exit (-1);
+            }
+        }
+      else
+        {
+          files.emplace_back (argv[i]);
+        }
+    }
+
+  if (files.empty ())
+    help ();
+
+  if (cfg_file.empty ())
+    cfg_file = getenv_or ("HOME", "/etc/") + "/.ii.conf";
+
+  try
+    {
+      auto configs = read_config (cfg_file);
+      if (configs.empty ())
+        {
+          std::cerr << "ii: config file empty: " << cfg_file << '\n';
+          std::exit (-2);
+        }
+
+      std::string key = [&configs, &user] () {
+        if (user.empty ())
+          {
+            user = configs.front ().name;
+            return configs.front ().pass;
+          }
+        auto it = std::find_if (std::begin (configs), std::end (configs), [&user] (const auto &cfg) {
+          return cfg.name == user;
+        });
+        if (it == std::end (configs))
+          throw std::runtime_error ("requested user has no configured API key in config file");
+
+        return it->pass;
+      }();
+    
+      auto curl = mk_curl ();
+      auto key_hdr = "Key: " + key;
+      auto url = "https://" + user + ".is-inside.me/upload";
+      std::cout << url << ": " << key_hdr << '\n';
+      for (const auto& file : files)
+        {
+          auto [ret, str] = upload_file (curl.get (), url, key_hdr, file);
+          std::cout << file << "(" << ret << "):\n" << str;
+        }
+    }
+  catch (const std::exception &ex)
+    {
+      std::cerr << "ii: " << ex.what () << '\n';
+      std::exit (-2);
+    }
+}
