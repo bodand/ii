@@ -16,7 +16,7 @@ The following prerequisites are the following:
 |----------|-------------------------------------|
 | make     | GNU make, or any* BSD's make        |
 | Compiler | Any C++17 compiler                  |
-| libcurl  | A preinstalled libcurl. See [#Config](#configug) |
+| libcurl  | A preinstalled libcurl. See [#Config](#Config) |
 | perl     | Any Perl 5                          |
 
 *: Tested with OpenBSD's `make(1)` utility. Should work with other BSD makes.
@@ -55,4 +55,8 @@ All contributions should be formatted with `make fmt` before creating PR-s.
 
 # License
 
+The repository is licensed under the BSD 3-Clause license. For more information see the provided 
+`LICENSE.txt` file.
 
+curl is licensed under, what seems like an ISC license modified with the third point of BSD3.
+For actually correct license see the official source at [https://github.com/curl/curl/blob/master/COPYING](https://github.com/curl/curl/blob/master/COPYING)
